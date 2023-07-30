@@ -26,20 +26,20 @@ import "github.com/howellzach/vlt-go"
 
 ```go
 client, err := vlt.NewClient(
-    OrganizationID:  os.Getenv("HCP_ORGANIZATION_ID"),
+	OrganizationID:  os.Getenv("HCP_ORGANIZATION_ID"),
 	ProjectID:       os.Getenv("HCP_PROJECT_ID"),
 	ApplicationName: os.Getenv("HCP_APPLICATION_NAME"),
 	ClientID:        os.Getenv("HCP_CLIENT_ID"),
 	ClientSecret:    os.Getenv("HCP_CLIENT_SECRET"),
 )
 if err != nil {
-    log.Fatalln(err)
+	log.Fatalln(err)
 }
 
 // get a secret object for stored secret named "TEST_SECRET"
 secret, err := client.GetSecret("TEST_SECRET")
 if err != nil {
-    t.Errorf("client GetSecret error: %s", err.Error())
+	t.Errorf("client GetSecret error: %s", err.Error())
 }
 
 // access and use the value within the secret
