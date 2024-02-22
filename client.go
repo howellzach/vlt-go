@@ -11,14 +11,17 @@ import (
 )
 
 var (
-	version = "v1.0.0"
-	AuthURL = url.URL{Scheme: "https", Host: "auth.hashicorp.com", Path: "/oauth/token"}
-	BaseURL = url.URL{Scheme: "https", Host: "api.cloud.hashicorp.com", Path: "/secrets/2023-06-13"}
+	version       = "v1.1.0"
+	AuthURL       = url.URL{Scheme: "https", Host: "auth.hashicorp.com", Path: "/oauth/token"}
+	BaseURL       = url.URL{Scheme: "https", Host: "api.cloud.hashicorp.com", Path: "/secrets/2023-06-13"}
+	HCPOrgURL     = url.URL{Scheme: "https", Host: "api.hashicorp.cloud", Path: "/resource-manager/2019-12-10/organizations"}
+	HCPProjectURL = url.URL{Scheme: "https", Host: "api.hashicorp.cloud", Path: "/resource-manager/2019-12-10/projects"}
 )
 
 type Client struct {
-	OrganizationID  string
-	ProjectID       string
+	OrganizationID  string `json:"organization_id,omitempty"`
+	ProjectID       string `json:"project_id,omitempty"`
+	ProjectName     string `json:"project_name,omitempty"`
 	ApplicationName string
 	ClientID        string
 	ClientSecret    string
@@ -29,6 +32,31 @@ type Client struct {
 type authResponse struct {
 	AccessToken string `json:"access_token,omitempty"`
 	TokenType   string `json:"token_type,omitempty"`
+}
+
+type organizationsResponse struct {
+	Organizations []organization `json:"organizations,omitempty"`
+}
+
+type organization struct {
+	ID        string                 `json:"id,omitempty"`
+	Name      string                 `json:"name,omitempty"`
+	Owner     map[string]interface{} `json:"owner,omitempty"`
+	CreatedAt string                 `json:"created_at,omitempty"`
+	State     string                 `json:"state,omitempty"`
+}
+
+type projectsResponse struct {
+	Projects []project `json:"projects,omitempty"`
+}
+
+type project struct {
+	ID          string                 `json:"id,omitempty"`
+	Name        string                 `json:"name,omitempty"`
+	Parent      map[string]interface{} `json:"parent,omitempty"`
+	CreatedAt   string                 `json:"created_at,omitempty"`
+	State       string                 `json:"state,omitempty"`
+	Description string                 `json:"description,omitempty"`
 }
 
 type authError struct {
@@ -105,6 +133,59 @@ func handleHTTPError(httpResponseData []byte, httpResponse *http.Response, authe
 	}
 }
 
+// Populate OrganizationID with the first organization found in the account
+func (c *Client) PopulateOrganizationID() error {
+	httpResponse, err := c.sendRequest("GET", HCPOrgURL, nil, true)
+	if err != nil {
+		return err
+	}
+
+	var orgResp organizationsResponse
+	if err := json.Unmarshal(httpResponse, &orgResp); err != nil {
+		return err
+	}
+
+	c.OrganizationID = orgResp.Organizations[0].ID
+	return nil
+}
+
+// Populate ProjectID with the first project found in the organization or with the ID for the provided project name
+func (c *Client) PopulateProjectID() error {
+	q := HCPProjectURL.Query()
+	q.Set("scope.type", "ORGANIZATION")
+	q.Set("scope.id", c.OrganizationID)
+	HCPProjectURL.RawQuery = q.Encode()
+
+	httpResponse, err := c.sendRequest("GET", HCPProjectURL, nil, true)
+	if err != nil {
+		return err
+	}
+
+	var projectResp projectsResponse
+	if err := json.Unmarshal(httpResponse, &projectResp); err != nil {
+		return err
+	}
+
+	if len(projectResp.Projects) == 0 {
+		return fmt.Errorf("No projects found in the organization")
+	}
+
+	if c.ProjectName == "" {
+		c.ProjectID = projectResp.Projects[0].ID
+		c.ProjectName = projectResp.Projects[0].Name
+		return nil
+	}
+
+	for _, project := range projectResp.Projects {
+		if c.ProjectName == project.Name {
+			c.ProjectID = project.ID
+			return nil
+		}
+	}
+
+	return nil
+}
+
 // Authenticate authenticates against HashiCorp's cloud services with provided client credentials
 func (c *Client) Authenticate() error {
 	authRequestData := map[string]string{
@@ -129,10 +210,11 @@ func (c *Client) Authenticate() error {
 }
 
 // NewClient creates a new client for interacting with the HashiCorp Vault Secrets service
-func NewClient(organizationID string, projectID string, applicationName string, clientID string, clientSecret string) (Client, error) {
+func NewClient(organizationID string, projectID string, applicationName string, clientID string, clientSecret string, projectName string) (Client, error) {
 	client := Client{
 		OrganizationID:  organizationID,
 		ProjectID:       projectID,
+		ProjectName:     projectName,
 		ApplicationName: applicationName,
 		ClientID:        clientID,
 		ClientSecret:    clientSecret,
@@ -143,6 +225,18 @@ func NewClient(organizationID string, projectID string, applicationName string, 
 
 	if err := client.Authenticate(); err != nil {
 		return Client{}, err
+	}
+
+	if client.OrganizationID == "" {
+		if err := client.PopulateOrganizationID(); err != nil {
+			return Client{}, err
+		}
+	}
+
+	if client.ProjectID == "" {
+		if err := client.PopulateProjectID(); err != nil {
+			return Client{}, err
+		}
 	}
 
 	return client, nil

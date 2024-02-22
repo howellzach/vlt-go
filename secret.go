@@ -139,21 +139,23 @@ func (c *Client) ListSecrets() ([]string, error) {
 
 // GetAllSecrets gets all secret objects with their values in a configured application
 func (c *Client) GetAllSecrets() ([]Secret, error) {
-	secretList, err := c.ListSecrets()
+	getSecretURL := BaseURL.JoinPath(
+		fmt.Sprintf(
+			"organizations/%s/projects/%s/apps/%s/open",
+			c.OrganizationID, c.ProjectID, c.ApplicationName,
+		),
+	)
+	httpResponse, err := c.sendRequest("GET", *getSecretURL, nil, true)
 	if err != nil {
 		return nil, err
 	}
 
-	var secrets []Secret
-	for _, secret := range secretList {
-		s, err := c.GetSecret(secret)
-		if err != nil {
-			return nil, err
-		}
-		secrets = append(secrets, s)
+	var sResp listSecretsResponse
+	if err = json.Unmarshal(httpResponse, &sResp); err != nil {
+		return nil, err
 	}
 
-	return secrets, nil
+	return sResp.Secrets, nil
 }
 
 // DeleteSecret deletes a secret within an application by name

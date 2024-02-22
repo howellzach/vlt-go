@@ -12,6 +12,7 @@ var client = Client{
 	ApplicationName: os.Getenv("HCP_APPLICATION_NAME"),
 	ClientID:        os.Getenv("HCP_CLIENT_ID"),
 	ClientSecret:    os.Getenv("HCP_CLIENT_SECRET"),
+	ProjectName:     os.Getenv("HCP_PROJECT_NAME"),
 	httpClient:      &http.Client{},
 }
 
